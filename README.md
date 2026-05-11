@@ -1,4 +1,4 @@
-# Parallel Chunk-Based File Downloader
+# Multithreaded Segmented File Downloader
 
 A high-performance file retrieval tool built in C that accelerates downloads by dividing files into byte-range chunks and fetching them simultaneously across multiple threads. The implementation leverages POSIX threading primitives, mutex-based synchronisation, and the libcurl networking library.
 
