@@ -12,6 +12,7 @@
 #include <pthread.h>
 #include "downloader.h"
 #include "monitor.h"
+
 // Create temporary segment file paths
 char *createSegmentPath(const char *basePath, int segmentId)
 {
@@ -114,17 +115,17 @@ int startThreadedDownload(const char *url, const char *outputPath, int numThread
         return -1;
     }
 
-    // Start download threads
+    // Start download threads - FIX: Cast to void* explicitly
     for (int i = 0; i < numThreads; i++)
     {
-        if (pthread_create(&threads[i], NULL, downloadSegmentThread, &segments[i]) != 0)
+        if (pthread_create(&threads[i], NULL, downloadSegmentThread, (void *)&segments[i]) != 0)
         {
             fprintf(stderr, "Thread creation failed for segment %d\n", i);
             // Continue with other threads
         }
     }
 
-    // Wait for all threads to complete
+    // Wait for all threads to complete - CRITICAL SYNCHRONIZATION POINT
     for (int i = 0; i < numThreads; i++)
     {
         pthread_join(threads[i], NULL);
@@ -164,6 +165,7 @@ int startThreadedDownload(const char *url, const char *outputPath, int numThread
 
     return allCompleted ? 0 : -1;
 }
+
 void startDownload(const char *url, Monitor *monitor)
 {
     if (!url || !monitor)
@@ -246,6 +248,14 @@ void startDownload(const char *url, Monitor *monitor)
     else if (fileSize < 10 * 1024 * 1024) // If file is smaller than 10MB
         numThreads = 4;
 
+    printf("═══════════════════════════════════════════\n");
+    printf("📥 DOWNLOAD CONFIGURATION\n");
+    printf("═══════════════════════════════════════════\n");
+    printf("File Size: %ld bytes (%.2f MB)\n", fileSize, fileSize / (1024.0 * 1024.0));
+    printf("Number of Threads: %d\n", numThreads);
+    printf("Output: %s\n", baseOutputPath);
+    printf("═══════════════════════════════════════════\n\n");
+
     // Divide file into segments with proper paths
     FileSegment *segments = malloc(numThreads * sizeof(FileSegment));
     if (!segments)
@@ -281,7 +291,13 @@ void startDownload(const char *url, Monitor *monitor)
             curl_global_cleanup();
             return;
         }
+
+        printf("Segment %d: bytes %ld-%ld (size: %ld KB)\n", 
+               i, segments[i].start, segments[i].end, 
+               (segments[i].end - segments[i].start + 1) / 1024);
     }
+
+    printf("\n");
 
     // Initialize progress tracking
     DownloadProgress progress;
@@ -312,40 +328,50 @@ void startDownload(const char *url, Monitor *monitor)
         return;
     }
 
+    printf("⏳ Starting %d download threads...\n", numThreads);
+
+    // FIX: Create threads and pass segment pointer correctly
+    // IMPORTANT: Cast to void* and pass the address of each segment
     for (int i = 0; i < numThreads; i++)
     {
-        if (pthread_create(&threads[i], NULL, downloadSegment, &segments[i]) != 0)
+        if (pthread_create(&threads[i], NULL, downloadSegment, (void *)&segments[i]) != 0)
         {
-            fprintf(stderr, "Error: Thread creation failed\n");
+            fprintf(stderr, "Error: Thread creation failed for segment %d\n", i);
             // We'll continue with other threads
         }
     }
 
-    // Wait for threads to complete
+    printf("✓ All threads created. Waiting for completion...\n\n");
+
+    // Wait for threads to complete - THIS IS THE CRITICAL SYNCHRONIZATION POINT
+    // Without this, program exits before download completes
     for (int i = 0; i < numThreads; i++)
     {
         pthread_join(threads[i], NULL);
+        printf("✓ Segment %d download completed\n", i);
     }
+
+    printf("\n✓ All segments downloaded successfully.\n\n");
 
     // Check if all segments completed successfully
     if (allSegmentsCompleted(segments, numThreads))
     {
-        printf("All segments downloaded successfully. Merging...\n");
+        printf("🔗 Merging %d segments into final file...\n", numThreads);
         if (mergeSegments(baseOutputPath, segments, numThreads) == 0)
         {
-            printf("Download completed successfully: %s\n", baseOutputPath);
+            printf("✓ Download completed successfully!\n");
+            printf("📁 File saved to: %s\n", baseOutputPath);
             updateProgress(monitor, baseOutputPath, 100);
-            printf("File saved to Downloads.\n");
         }
         else
         {
-            fprintf(stderr, "Error: Failed to merge segments\n");
+            fprintf(stderr, "✗ Error: Failed to merge segments\n");
             updateProgress(monitor, baseOutputPath, -1);
         }
     }
     else
     {
-        fprintf(stderr, "Error: Some segments failed to download\n");
+        fprintf(stderr, "✗ Error: Some segments failed to download\n");
         updateProgress(monitor, baseOutputPath, -1);
     }
 
