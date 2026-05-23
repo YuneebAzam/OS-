@@ -41,7 +41,23 @@ char *get_filename_from_url(const char *url)
 
     const char *last_slash = strrchr(url, '/');
     const char *filename = (last_slash && *(last_slash + 1)) ? last_slash + 1 : "downloaded_file.dat";
-    return strdup(filename);
+    
+    // Handle URL parameters - extract filename before '?'
+    char *result = strdup(filename);
+    char *question = strchr(result, '?');
+    if (question)
+    {
+        *question = '\0';  // Truncate at '?'
+    }
+    
+    // If filename is empty, use default
+    if (strlen(result) == 0)
+    {
+        free(result);
+        return strdup("downloaded_file.dat");
+    }
+    
+    return result;
 }
 
 int downloadFileSegment(const char *url, const char *outputPath, long start, long end)
@@ -72,8 +88,10 @@ int downloadFileSegment(const char *url, const char *outputPath, long start, lon
     curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, file);
     curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl_handle, CURLOPT_MAXREDIRS, 5L);
     curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
     curl_easy_setopt(curl_handle, CURLOPT_RANGE, range);
+    curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, 30L);
 
     res = curl_easy_perform(curl_handle);
     if (res != CURLE_OK)
@@ -95,6 +113,12 @@ long getFileSize(const char *url)
     CURLcode res;
     curl_off_t fileSize = -1;
 
+    if (!url)
+    {
+        fprintf(stderr, "Error: URL is NULL\n");
+        return -1;
+    }
+
     curl = curl_easy_init();
     if (!curl)
     {
@@ -102,32 +126,39 @@ long getFileSize(const char *url)
         return -1;
     }
 
+    // Set curl options for HEAD request to get file size
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);              // HEAD request only
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);      // Follow redirects
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);           // Allow up to 5 redirects
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);            // 30 second timeout
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);      // Don't verify SSL (for compatibility)
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "file-downloader/1.0");
 
+    printf("🔍 Probing file size...\n");
     res = curl_easy_perform(curl);
+    
     if (res != CURLE_OK)
     {
-        fprintf(stderr, "Error: CURL request failed: %s\n", curl_easy_strerror(res));
+        fprintf(stderr, "⚠️  Error: CURL request failed: %s\n", curl_easy_strerror(res));
         curl_easy_cleanup(curl);
         return -1;
     }
 
-#if LIBCURL_VERSION_NUM >= 0x073700
-    res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &fileSize);
-#else
-    double tempSize;
-    res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &tempSize);
-    fileSize = (res == CURLE_OK && tempSize >= 0) ? (curl_off_t)tempSize : -1;
-#endif
+    // Get the content length from response headers
+    #if LIBCURL_VERSION_NUM >= 0x073700
+        res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &fileSize);
+    #else
+        double tempSize;
+        res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &tempSize);
+        fileSize = (res == CURLE_OK && tempSize >= 0) ? (curl_off_t)tempSize : -1;
+    #endif
 
     if (res != CURLE_OK || fileSize < 0)
     {
-        fprintf(stderr, "Error: Could not determine file size: %s\n", curl_easy_strerror(res));
+        fprintf(stderr, "⚠️  Warning: Could not determine file size from server headers.\n");
+        fprintf(stderr, "    Server may not support Content-Length header or Range requests.\n");
+        fprintf(stderr, "    Attempting alternative approach...\n");
         curl_easy_cleanup(curl);
         return -1;
     }
