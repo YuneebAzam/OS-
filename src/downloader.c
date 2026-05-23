@@ -328,7 +328,7 @@ void startDownload(const char *url, Monitor *monitor)
         return;
     }
 
-    printf("⏳ Starting %d download threads...\n", numThreads);
+    printf("Starting %d download threads...\n", numThreads);
 
     // FIX: Create threads and pass segment pointer correctly
     // IMPORTANT: Cast to void* and pass the address of each segment
@@ -341,26 +341,26 @@ void startDownload(const char *url, Monitor *monitor)
         }
     }
 
-    printf("✓ All threads created. Waiting for completion...\n\n");
+    printf("All threads created. Waiting for completion...\n\n");
 
     // Wait for threads to complete - THIS IS THE CRITICAL SYNCHRONIZATION POINT
     // Without this, program exits before download completes
     for (int i = 0; i < numThreads; i++)
     {
         pthread_join(threads[i], NULL);
-        printf("✓ Segment %d download completed\n", i);
+        printf("Segment %d download completed\n", i);
     }
 
-    printf("\n✓ All segments downloaded successfully.\n\n");
+    printf("\nAll segments downloaded successfully.\n\n");
 
     // Check if all segments completed successfully
     if (allSegmentsCompleted(segments, numThreads))
     {
-        printf("🔗 Merging %d segments into final file...\n", numThreads);
+        printf("Merging %d segments into final file...\n", numThreads);
         if (mergeSegments(baseOutputPath, segments, numThreads) == 0)
         {
             printf("✓ Download completed successfully!\n");
-            printf("📁 File saved to: %s\n", baseOutputPath);
+            printf("File saved to: %s\n", baseOutputPath);
             updateProgress(monitor, baseOutputPath, 100);
         }
         else
