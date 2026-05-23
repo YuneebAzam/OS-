@@ -359,19 +359,19 @@ void startDownload(const char *url, Monitor *monitor)
         printf("Merging %d segments into final file...\n", numThreads);
         if (mergeSegments(baseOutputPath, segments, numThreads) == 0)
         {
-            printf("✓ Download completed successfully!\n");
+            printf("Download completed successfully!\n");
             printf("File saved to: %s\n", baseOutputPath);
             updateProgress(monitor, baseOutputPath, 100);
         }
         else
         {
-            fprintf(stderr, "✗ Error: Failed to merge segments\n");
+            fprintf(stderr, "Error: Failed to merge segments\n");
             updateProgress(monitor, baseOutputPath, -1);
         }
     }
     else
     {
-        fprintf(stderr, "✗ Error: Some segments failed to download\n");
+        fprintf(stderr, "Error: Some segments failed to download\n");
         updateProgress(monitor, baseOutputPath, -1);
     }
 
